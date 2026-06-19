@@ -369,3 +369,47 @@ tr .cell:first-child {
 #retry-btn:active {
   background: #991b1b;
 }
+
+/* === Feature 2: Timer row === */
+#timer-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 436px;
+}
+
+#timer {
+  font-size: 16px;
+  font-family: "SF Mono", "Menlo", "Monaco", "Courier New", monospace;
+  color: #6b7280;
+}
+
+/* === Feature 3: Smart numpad disabled buttons === */
+.num-disabled {
+  opacity: 0.3;
+  pointer-events: none;
+  color: #9ca3af;
+}
+
+/* === Feature 4: Number highlight === */
+.cell-highlight {
+  color: #ea580c;
+  background: #fef9c3;
+}
+
+/* === Wrong answer flash === */
+@keyframes shake-flash {
+  0%   { transform: translateX(0); }
+  15%  { transform: translateX(-6px); }
+  30%  { transform: translateX(6px); }
+  45%  { transform: translateX(-4px); }
+  60%  { transform: translateX(4px); }
+  75%  { transform: translateX(-2px); }
+  85%  { transform: translateX(2px); }
+  100% { transform: translateX(0); }
+}
+
+body.wrong-answer-flash {
+  animation: shake-flash 0.4s ease;
+  background-color: rgba(255, 0, 0, 0.15) !important;
+}

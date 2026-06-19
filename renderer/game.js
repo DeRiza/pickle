@@ -43,10 +43,87 @@ var MAX_ERRORS_BY_DIFFICULTY = {
 };
 
 // ---------------------------------------------------------------------------
+// 数独求解器（回溯算法）
+// ---------------------------------------------------------------------------
+
+function solveSudoku(board) {
+  var grid = board.map(function (row) { return row.slice(); });
+
+  function isValid(grid, row, col, num) {
+    // Check row
+    for (var c = 0; c < 9; c++) {
+      if (grid[row][c] === num) return false;
+    }
+    // Check column
+    for (var r = 0; r < 9; r++) {
+      if (grid[r][col] === num) return false;
+    }
+    // Check 3x3 box
+    var boxRow = Math.floor(row / 3) * 3;
+    var boxCol = Math.floor(col / 3) * 3;
+    for (var br = boxRow; br < boxRow + 3; br++) {
+      for (var bc = boxCol; bc < boxCol + 3; bc++) {
+        if (grid[br][bc] === num) return false;
+      }
+    }
+    return true;
+  }
+
+  function backtrack() {
+    for (var r = 0; r < 9; r++) {
+      for (var c = 0; c < 9; c++) {
+        if (grid[r][c] === 0) {
+          for (var n = 1; n <= 9; n++) {
+            if (isValid(grid, r, c, n)) {
+              grid[r][c] = n;
+              if (backtrack()) return true;
+              grid[r][c] = 0;
+            }
+          }
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  backtrack();
+  return grid;
+}
+
+// ---------------------------------------------------------------------------
 // SudokuGame 类
 // ---------------------------------------------------------------------------
 
-function SudokuGame(difficulty, puzzleIndex) {
+function SudokuGame(difficulty, puzzleIndex, savedState) {
+  // Restore from saved state if provided
+  if (savedState) {
+    this.difficulty = savedState.difficulty;
+    this.board = savedState.board.map(function (row) { return row.slice(); });
+    this.initialPuzzle = savedState.initialPuzzle.map(function (row) { return row.slice(); });
+    this.selectedCell = null;
+    this.conflicts = new Set();
+    this.notesMode = savedState.notesMode;
+    this.notes = savedState.notes.map(function (row) { return row.slice(); });
+    this.errorCount = savedState.errorCount;
+    this.maxErrors = MAX_ERRORS_BY_DIFFICULTY[this.difficulty];
+    this.isGameOver = savedState.isGameOver;
+    this.isComplete = savedState.isComplete;
+    this.elapsedSeconds = savedState.elapsedSeconds || 0;
+    this.timerInterval = null;
+    this.timerRunning = false;
+    this.highlightedNumber = null;
+    this.solution = savedState.solution
+      ? savedState.solution.map(function (row) { return row.slice(); })
+      : solveSudoku(savedState.initialPuzzle);
+    this._bindKeyboard();
+    this._updateConflicts();
+    if (!this.isGameOver && !this.isComplete) {
+      this.startTimer();
+    }
+    return;
+  }
+
   var diff = difficulty || 'medium';
   if (!PUZZLES_BY_DIFFICULTY[diff]) {
     diff = 'medium';
@@ -64,6 +141,7 @@ function SudokuGame(difficulty, puzzleIndex) {
 
   this.board = puzzle.map(function (row) { return row.slice(); });
   this.initialPuzzle = puzzle.map(function (row) { return row.slice(); });
+  this.solution = solveSudoku(puzzle);
   this.selectedCell = null;
   this.conflicts = new Set();
 
@@ -84,9 +162,18 @@ function SudokuGame(difficulty, puzzleIndex) {
 
   this.isComplete = false;
 
+  // Timer
+  this.elapsedSeconds = 0;
+  this.timerInterval = null;
+  this.timerRunning = false;
+
+  // Highlight
+  this.highlightedNumber = null;
+
   this._bindKeyboard();
   this._updateConflicts();
   this.checkComplete();
+  this.startTimer();
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +183,7 @@ function SudokuGame(difficulty, puzzleIndex) {
 SudokuGame.prototype.selectCell = function (row, col) {
   if (row >= 0 && row < 9 && col >= 0 && col < 9) {
     this.selectedCell = { row: row, col: col };
+    this.clearHighlight();
   }
 };
 
@@ -150,6 +238,7 @@ SudokuGame.prototype.toggleNote = function (n) {
   }
 
   this.checkComplete();
+  this.saveGame();
 };
 
 // ---------------------------------------------------------------------------
@@ -185,28 +274,38 @@ SudokuGame.prototype.inputNumber = function (n) {
     this.board[row][col] = 0;
     this._updateConflicts();
     this.checkComplete();
+    this.saveGame();
     return;
   }
 
-  // Check if placing n introduces conflicts → count as error
-  var cellConflicts = this.checkConflict(row, col, n);
-  if (cellConflicts.length > 0) {
+  this.board[row][col] = n;
+
+  // Check against solution
+  if (n !== this.solution[row][col]) {
     this.errorCount += 1;
+    this.wrongAnswerFlash = true;
     if (this.errorCount >= this.maxErrors) {
       this.isGameOver = true;
     }
   }
-
-  this.board[row][col] = n;
   this.notes[row][col] = 0; // Clear notes when placing a number
 
   this._updateConflicts();
 
   if (this.isGameOver) {
     this.isComplete = false;
+    this.pauseTimer();
   } else {
     this.checkComplete();
   }
+
+  this.saveGame();
+};
+
+SudokuGame.prototype.consumeWrongAnswerFlash = function () {
+  var val = this.wrongAnswerFlash === true;
+  this.wrongAnswerFlash = false;
+  return val;
 };
 
 SudokuGame.prototype.clearCell = function () {
@@ -220,6 +319,7 @@ SudokuGame.prototype.clearCell = function () {
   // Notes mode: clear notes, not number
   if (this.notesMode) {
     this.notes[row][col] = 0;
+    this.saveGame();
     return;
   }
 
@@ -228,6 +328,7 @@ SudokuGame.prototype.clearCell = function () {
   this.board[row][col] = 0;
   this._updateConflicts();
   this.checkComplete();
+  this.saveGame();
 };
 
 // ---------------------------------------------------------------------------
@@ -290,17 +391,10 @@ SudokuGame.prototype.checkComplete = function () {
     }
   }
 
-  // Check no conflicts
-  if (this.conflicts.size > 0) {
-    this.isComplete = false;
-    return;
-  }
-
-  // Verify every cell
+  // Verify against solution
   for (var r2 = 0; r2 < 9; r2++) {
     for (var c2 = 0; c2 < 9; c2++) {
-      var cellConflicts = this.checkConflict(r2, c2, this.board[r2][c2]);
-      if (cellConflicts.length > 0) {
+      if (this.board[r2][c2] !== this.solution[r2][c2]) {
         this.isComplete = false;
         return;
       }
@@ -308,6 +402,7 @@ SudokuGame.prototype.checkComplete = function () {
   }
 
   this.isComplete = true;
+  this.pauseTimer();
 };
 
 SudokuGame.prototype.getSameNumberCells = function (row, col) {
@@ -325,6 +420,159 @@ SudokuGame.prototype.getSameNumberCells = function (row, col) {
   }
 
   return cells;
+};
+
+
+// ---------------------------------------------------------------------------
+// 错误显示 (功能 1)
+// ---------------------------------------------------------------------------
+
+SudokuGame.prototype.errorStatus = function () {
+  return this.errorCount + '/' + this.maxErrors;
+};
+
+// ---------------------------------------------------------------------------
+// 计时器 (功能 2)
+// ---------------------------------------------------------------------------
+
+SudokuGame.prototype.startTimer = function () {
+  if (this.timerRunning) return;
+  var self = this;
+  this.timerRunning = true;
+  this.timerInterval = setInterval(function () {
+    self.elapsedSeconds += 1;
+  }, 1000);
+};
+
+SudokuGame.prototype.pauseTimer = function () {
+  if (!this.timerRunning) return;
+  this.timerRunning = false;
+  clearInterval(this.timerInterval);
+  this.timerInterval = null;
+};
+
+SudokuGame.prototype.resetTimer = function () {
+  this.pauseTimer();
+  this.elapsedSeconds = 0;
+};
+
+SudokuGame.prototype.getTimeString = function () {
+  var mins = Math.floor(this.elapsedSeconds / 60);
+  var secs = this.elapsedSeconds % 60;
+  return (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs;
+};
+
+// ---------------------------------------------------------------------------
+// 智能数字键盘 (功能 3)
+// ---------------------------------------------------------------------------
+
+SudokuGame.prototype.getValidNumbers = function (row, col) {
+  // Preset cells have no valid numbers
+  if (this.isGiven(row, col)) return [];
+
+  // Empty cell: collect numbers missing from row, column, box
+  var seen = {};
+  var r, c;
+
+  // Row
+  for (c = 0; c < 9; c++) {
+    if (this.board[row][c] !== 0) seen[this.board[row][c]] = true;
+  }
+  // Column
+  for (r = 0; r < 9; r++) {
+    if (this.board[r][col] !== 0) seen[this.board[r][col]] = true;
+  }
+  // Box
+  var boxRow = Math.floor(row / 3) * 3;
+  var boxCol = Math.floor(col / 3) * 3;
+  for (r = boxRow; r < boxRow + 3; r++) {
+    for (c = boxCol; c < boxCol + 3; c++) {
+      if (this.board[r][c] !== 0) seen[this.board[r][c]] = true;
+    }
+  }
+
+  var valid = [];
+  for (var n = 1; n <= 9; n++) {
+    if (!seen[n]) valid.push(n);
+  }
+  return valid;
+};
+
+// ---------------------------------------------------------------------------
+// 数字高亮 (功能 4)
+// ---------------------------------------------------------------------------
+
+SudokuGame.prototype.highlightNumber = function (n) {
+  // Only set highlight when no cell is selected
+  if (this.selectedCell) return;
+  this.highlightedNumber = n;
+};
+
+SudokuGame.prototype.clearHighlight = function () {
+  this.highlightedNumber = null;
+};
+
+SudokuGame.prototype.getNumberCells = function (n) {
+  var cells = [];
+  for (var r = 0; r < 9; r++) {
+    for (var c = 0; c < 9; c++) {
+      if (this.board[r][c] === n) {
+        cells.push({ row: r, col: c });
+      }
+    }
+  }
+  return cells;
+};
+
+// ---------------------------------------------------------------------------
+// 自动存档/读档 (功能 5)
+// ---------------------------------------------------------------------------
+
+SudokuGame.prototype.saveGame = function () {
+  var data = {
+    difficulty: this.difficulty,
+    board: this.board,
+    notes: this.notes,
+    errorCount: this.errorCount,
+    elapsedSeconds: this.elapsedSeconds,
+    notesMode: this.notesMode,
+    isComplete: this.isComplete,
+    isGameOver: this.isGameOver,
+    initialPuzzle: this.initialPuzzle,
+    solution: this.solution
+  };
+  try {
+    localStorage.setItem('sudoku_save_' + this.difficulty, JSON.stringify(data));
+  } catch (e) {
+    // localStorage may be full or unavailable
+  }
+};
+
+SudokuGame.loadGame = function (difficulty) {
+  try {
+    var raw = localStorage.getItem('sudoku_save_' + difficulty);
+    if (!raw) return null;
+    var data = JSON.parse(raw);
+    return new SudokuGame(difficulty, 0, data);
+  } catch (e) {
+    return null;
+  }
+};
+
+SudokuGame.clearSave = function (difficulty) {
+  try {
+    localStorage.removeItem('sudoku_save_' + difficulty);
+  } catch (e) {
+    // ignore
+  }
+};
+
+SudokuGame.hasSave = function (difficulty) {
+  try {
+    return localStorage.getItem('sudoku_save_' + difficulty) !== null;
+  } catch (e) {
+    return false;
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -419,6 +667,7 @@ SudokuGame.prototype._bindKeyboard = function () {
 // ---------------------------------------------------------------------------
 
 window.game = new SudokuGame('medium');
+window.SudokuGame = SudokuGame;
 
 window.selectCell = function (row, col) {
   window.game.selectCell(row, col);
@@ -446,6 +695,7 @@ window.newGame = function (difficulty) {
   var puzzles = PUZZLES_BY_DIFFICULTY[diff];
   var idx = Math.floor(Math.random() * puzzles.length);
   window.game = new SudokuGame(diff, idx);
+  window.game.saveGame();
   if (typeof render === 'function') render();
 };
 

@@ -17,7 +17,7 @@
           <option value="hard">高级</option>
           <option value="expert">专家</option>
         </select>
-        <span id="error-counter">剩余 ❌ × 3</span>
+        <span id="error-counter">错误 0/4</span>
       </div>
       <button id="new-game-btn" onclick="startNewGame()">新游戏</button>
     </header>
@@ -126,20 +126,21 @@
       </tbody>
     </table>
 
-    <div id="notes-toggle-row">
+    <div id="timer-row">
+      <span id="timer">00:00</span>
       <button id="notes-toggle-btn" onclick="window.toggleNotesMode()">📝 笔记</button>
     </div>
 
     <div id="numpad">
-      <button class="num-btn" onclick="inputNumber(1)">1</button>
-      <button class="num-btn" onclick="inputNumber(2)">2</button>
-      <button class="num-btn" onclick="inputNumber(3)">3</button>
-      <button class="num-btn" onclick="inputNumber(4)">4</button>
-      <button class="num-btn" onclick="inputNumber(5)">5</button>
-      <button class="num-btn" onclick="inputNumber(6)">6</button>
-      <button class="num-btn" onclick="inputNumber(7)">7</button>
-      <button class="num-btn" onclick="inputNumber(8)">8</button>
-      <button class="num-btn" onclick="inputNumber(9)">9</button>
+      <button class="num-btn" onclick="handleNumClick(1)">1</button>
+      <button class="num-btn" onclick="handleNumClick(2)">2</button>
+      <button class="num-btn" onclick="handleNumClick(3)">3</button>
+      <button class="num-btn" onclick="handleNumClick(4)">4</button>
+      <button class="num-btn" onclick="handleNumClick(5)">5</button>
+      <button class="num-btn" onclick="handleNumClick(6)">6</button>
+      <button class="num-btn" onclick="handleNumClick(7)">7</button>
+      <button class="num-btn" onclick="handleNumClick(8)">8</button>
+      <button class="num-btn" onclick="handleNumClick(9)">9</button>
       <button class="num-btn erase-btn" onclick="clearCell()">⌫</button>
     </div>
   </div>
@@ -162,38 +163,55 @@
   <script src="game.js"></script>
   <script>
     function startNewGame() {
-      const sel = document.getElementById('difficulty-select');
-      const difficulty = sel ? sel.value : 'medium';
+      var sel = document.getElementById('difficulty-select');
+      var difficulty = sel ? sel.value : 'medium';
+      localStorage.setItem('sudoku_last_difficulty', difficulty);
       window.newGame(difficulty);
     }
 
+    function handleNumClick(n) {
+      var g = window.game;
+      if (!g.selectedCell) {
+        // No cell selected — toggle highlight mode
+        if (g.highlightedNumber === n) {
+          g.clearHighlight();
+        } else {
+          g.highlightNumber(n);
+        }
+      } else {
+        // Cell selected — normal input
+        inputNumber(n);
+      }
+      render();
+    }
+
     function render() {
-      const g = window.game;
+      var g = window.game;
 
       // Clear all cell classes and content
-      document.querySelectorAll('.cell').forEach(cell => {
+      document.querySelectorAll('.cell').forEach(function(cell) {
         cell.className = 'cell';
         cell.textContent = '';
       });
 
       // Render board
-      for (let r = 0; r < 9; r++) {
-        for (let c = 0; c < 9; c++) {
-          const val = g.board[r][c];
-          const cell = document.querySelector(`.cell[data-row="${r}"][data-col="${c}"]`);
+      for (var r = 0; r < 9; r++) {
+        for (var c = 0; c < 9; c++) {
+          var val = g.board[r][c];
+          var cell = document.querySelector('.cell[data-row="' + r + '"][data-col="' + c + '"]');
 
           if (val !== 0) {
             cell.textContent = val;
             cell.classList.add(g.isGiven(r, c) ? 'cell-given' : 'cell-user');
           } else {
             // Show notes for empty cells
-            const notes = g.getNotes(r, c);
+            var notes = g.getNotes(r, c);
             if (notes && notes.length > 0) {
-              const notesGrid = document.createElement('div');
+              var notesGrid = document.createElement('div');
               notesGrid.className = 'cell-notes';
-              for (let n = 1; n <= 9; n++) {
-                const span = document.createElement('span');
-                span.textContent = notes.includes(n) ? n : '';
+              for (var n = 1; n <= 9; n++) {
+                var span = document.createElement('span');
+                span.textContent = notes.indexOf(n) !== -1 ? n : '';
                 notesGrid.appendChild(span);
               }
               cell.appendChild(notesGrid);
@@ -201,11 +219,11 @@
           }
 
           // Conflict highlight
-          if (g.conflicts.has(`${r}-${c}`)) {
+          if (g.conflicts.has(r + '-' + c)) {
             cell.classList.add('cell-conflict');
           }
 
-          // Game-over dimming
+          // Game-over dimming (applied after highlight so highlight can override)
           if (g.isGameOver) {
             cell.classList.add('cell-gameover');
           }
@@ -214,21 +232,31 @@
 
       // Selected cell highlight
       if (g.selectedCell) {
-        const sel = document.querySelector(`.cell[data-row="${g.selectedCell.row}"][data-col="${g.selectedCell.col}"]`);
+        var sel = document.querySelector('.cell[data-row="' + g.selectedCell.row + '"][data-col="' + g.selectedCell.col + '"]');
         if (sel) sel.classList.add('cell-selected');
 
         // Same-number highlight
-        const same = g.getSameNumberCells(g.selectedCell.row, g.selectedCell.col);
-        same.forEach(([sr, sc]) => {
-          const c = document.querySelector(`.cell[data-row="${sr}"][data-col="${sc}"]`);
-          if (c && !(sr === g.selectedCell.row && sc === g.selectedCell.col)) {
-            c.classList.add('cell-same-number');
+        var same = g.getSameNumberCells(g.selectedCell.row, g.selectedCell.col);
+        same.forEach(function(pair) {
+          var sr = pair[0], sc = pair[1];
+          var cEl = document.querySelector('.cell[data-row="' + sr + '"][data-col="' + sc + '"]');
+          if (cEl && !(sr === g.selectedCell.row && sc === g.selectedCell.col)) {
+            cEl.classList.add('cell-same-number');
           }
         });
       }
 
+      // Number highlight (when no cell selected but highlightedNumber set)
+      if (g.highlightedNumber !== null && g.highlightedNumber !== undefined) {
+        var hlCells = g.getNumberCells(g.highlightedNumber);
+        hlCells.forEach(function(cell) {
+          var cEl = document.querySelector('.cell[data-row="' + cell.row + '"][data-col="' + cell.col + '"]');
+          if (cEl) cEl.classList.add('cell-highlight');
+        });
+      }
+
       // Notes toggle button state
-      const notesBtn = document.getElementById('notes-toggle-btn');
+      var notesBtn = document.getElementById('notes-toggle-btn');
       if (notesBtn) {
         if (g.notesMode) {
           notesBtn.classList.add('active');
@@ -238,10 +266,12 @@
       }
 
       // Error counter
-      const errCounter = document.getElementById('error-counter');
+      var errCounter = document.getElementById('error-counter');
       if (errCounter) {
-        const remaining = g.remainingErrors ? g.remainingErrors() : 0;
-        errCounter.textContent = `剩余 ❌ × ${remaining}`;
+        var statusStr = g.errorStatus();
+        errCounter.textContent = '错误 ' + statusStr;
+        var parts = statusStr.split('/');
+        var remaining = parseInt(parts[1]) - parseInt(parts[0]);
         errCounter.classList.remove('err-ok', 'err-warn', 'err-danger');
         if (remaining >= 2) {
           errCounter.classList.add('err-ok');
@@ -250,6 +280,30 @@
         } else {
           errCounter.classList.add('err-danger');
         }
+      }
+
+      // Timer
+      var timerEl = document.getElementById('timer');
+      if (timerEl) {
+        timerEl.textContent = g.getTimeString();
+      }
+
+      // Smart numpad — disable conflicting numbers when blank cell selected
+      var numBtns = document.querySelectorAll('.num-btn:not(.erase-btn)');
+      if (g.selectedCell && !g.isGiven(g.selectedCell.row, g.selectedCell.col) && !g.isComplete && !g.isGameOver) {
+        var validNums = g.getValidNumbers(g.selectedCell.row, g.selectedCell.col);
+        numBtns.forEach(function(btn) {
+          var n = parseInt(btn.textContent);
+          if (validNums.indexOf(n) === -1) {
+            btn.classList.add('num-disabled');
+          } else {
+            btn.classList.remove('num-disabled');
+          }
+        });
+      } else {
+        numBtns.forEach(function(btn) {
+          btn.classList.remove('num-disabled');
+        });
       }
 
       // Win modal
@@ -265,8 +319,53 @@
       } else {
         document.getElementById('lose-modal').style.display = 'none';
       }
+
+      // Wrong answer flash effect
+      if (g.consumeWrongAnswerFlash && g.consumeWrongAnswerFlash()) {
+        document.body.classList.add('wrong-answer-flash');
+        setTimeout(function() {
+          document.body.classList.remove('wrong-answer-flash');
+        }, 400);
+      }
     }
-    render();
+
+    // Timer update every second while running
+    setInterval(function() {
+      if (window.game && window.game.timerRunning) {
+        var timerEl = document.getElementById('timer');
+        if (timerEl) timerEl.textContent = window.game.getTimeString();
+      }
+    }, 1000);
+
+    // Init game: load save or start fresh
+    (function initGame() {
+      var savedDifficulty = localStorage.getItem('sudoku_last_difficulty') || 'medium';
+      var saved = SudokuGame.hasSave(savedDifficulty) ? SudokuGame.loadGame(savedDifficulty) : null;
+      if (saved) {
+        window.game = saved;
+        var sel = document.getElementById('difficulty-select');
+        if (sel) sel.value = savedDifficulty;
+      }
+      render();
+    })();
+
+    // Save on page unload
+    window.addEventListener('beforeunload', function() {
+      if (window.game && !window.game.isComplete && !window.game.isGameOver) {
+        window.game.saveGame();
+        localStorage.setItem('sudoku_last_difficulty', window.game.difficulty);
+      }
+    });
+
+    // Save on Electron quit (IPC from main process)
+    if (window.electronAPI && window.electronAPI.onSaveBeforeQuit) {
+      window.electronAPI.onSaveBeforeQuit(function() {
+        if (window.game && !window.game.isComplete && !window.game.isGameOver) {
+          window.game.saveGame();
+          localStorage.setItem('sudoku_last_difficulty', window.game.difficulty);
+        }
+      });
+    }
   </script>
 </body>
 </html>

@@ -22,6 +22,14 @@ function createWindow() {
 
 app.whenReady().then(createWindow);
 
+app.on('before-quit', function() {
+  // Notify renderer to save game state before quitting
+  var win = BrowserWindow.getAllWindows()[0];
+  if (win) {
+    win.webContents.send('save-before-quit');
+  }
+});
+
 app.on('window-all-closed', () => {
   app.quit();
 });

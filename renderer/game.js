@@ -246,6 +246,22 @@ SudokuGame.prototype.toggleNote = function (n) {
   this.saveGame();
 };
 
+  SudokuGame.prototype.autoFillNotes = function () {
+    for (var r = 0; r < 9; r++) {
+      for (var c = 0; c < 9; c++) {
+        if (this.board[r][c] === 0 && !this.isGiven(r, c)) {
+          var valid = this.getValidNumbers(r, c);
+          var mask = 0;
+          for (var i = 0; i < valid.length; i++) {
+            mask |= (1 << (valid[i] - 1));
+          }
+          this.notes[r][c] = mask;
+        }
+      }
+    }
+    this.saveGame();
+  };
+
 // ---------------------------------------------------------------------------
 // 错误计数
 // ---------------------------------------------------------------------------
@@ -734,9 +750,14 @@ window.toggleNotesMode = function () {
   window.game.toggleNotesMode();
   if (typeof render === 'function') render();
 };
+window.autoFillNotes = function () {
+  window.game.autoFillNotes();
+  if (typeof render === 'function') render();
+};
 
 // ---------------------------------------------------------------------------
 })();
 // render() 占位函数 — HTML 加载后会重新定义此函数来更新 UI
 // ---------------------------------------------------------------------------
 function render() {}
+
